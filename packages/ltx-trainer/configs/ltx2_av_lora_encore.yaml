@@ -1,0 +1,272 @@
+# =============================================================================
+# Encore — LoRA training configuration
+# =============================================================================
+#
+# This is the configuration used for the main results: LoRA fine-tuning of
+# LTX-2.3 with
+#   * the Encore token layout
+#     — reference-image anchor, reference-audio anchor, continuation frames,
+#       and error injection on the anchor latent, and
+#   * the learned condition routing table
+#     — a [num_layers, num_heads, 4] parameter that rescales the Anchor /
+#       Continuation / Semantic / Sync condition channels per attention head.
+#
+# Every path below written as <...> is a placeholder — replace it with a local
+# path. See the repository README for the full placeholder table and for how to
+# build `preprocessed_data_root` from your own videos.
+#
+# Expected layout of the preprocessed data directory:
+#   preprocessed_data_root/
+#   ├── latents/        # video latents (VAE-encoded videos)
+#   ├── conditions/     # text embeddings, one file per sample
+#   └── audio_latents/  # audio latents (required when with_audio: true)
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Model Configuration
+# -----------------------------------------------------------------------------
+model:
+  # Path to the LTX-2.3 base checkpoint (.safetensors). Must be a local file.
+  model_path: "<MODEL_ROOT>/ltx-2.3-22b-dev.safetensors"
+
+  # Path to the Gemma text encoder directory.
+  text_encoder_path: "<MODEL_ROOT>/gemma-3-12b-it-qat-q4_0-unquantized"
+
+  # "lora" for adapter training (used for all reported results), "full" for
+  # full fine-tuning.
+  training_mode: "lora"
+
+  # Optional: resume from a previous LoRA checkpoint (.safetensors) or from a
+  # checkpoint directory (the latest checkpoint inside it is used).
+  load_checkpoint: null
+
+lora:
+  # Rank / alpha of the LoRA matrices. r=128 is what the reported runs used.
+  rank: 128
+  alpha: 128
+  dropout: 0.0
+
+  # Which transformer modules receive LoRA adapters.
+  #
+  # The LTX-2 transformer has separate attention and FFN blocks for video and
+  # audio, plus two cross-modal attention blocks:
+  #   video:       attn1.* (self), attn2.* (cross to text), ff.*
+  #   audio:       audio_attn1.*, audio_attn2.*, audio_ff.*
+  #   cross-modal: audio_to_video_attn.*, video_to_audio_attn.*
+  # Short patterns such as "to_k" therefore match the video, audio and
+  # cross-modal attention projections at once, which is what we want for joint
+  # audio-video training.
+  target_modules:
+    - "to_k"
+    - "to_q"
+    - "to_v"
+    - "to_out.0"
+    - "ff.net.0.proj"
+    - "ff.net.2"
+    - "audio_ff.net.0.proj"
+    - "audio_ff.net.2"
+
+# -----------------------------------------------------------------------------
+# Training Strategy Configuration
+# -----------------------------------------------------------------------------
+training_strategy:
+  # Encore's strategy: text-to-video with the Encore token layout.
+  name: "text_to_video_encore"
+
+  # Probability of conditioning on the first frame. 1.0 means the model always
+  # sees a clean anchor frame, i.e. it is trained purely in image-to-video mode.
+  first_frame_conditioning_p: 1.0
+
+  # Joint audio-video training.
+  with_audio: true
+
+  # Directory (inside preprocessed_data_root) holding the audio latents.
+  audio_latents_dir: "audio_latents"
+
+  # Anchors: a reference image and a reference audio segment are prepended
+  # to the sequence and excluded from the loss.
+  with_reference_image: true
+  with_reference_audio: true
+
+  # Error injection. During training the anchor latent is replaced, with
+  # probability error_injection_p, by a latent drawn from a buffer of the
+  # model's own past prediction errors. This makes the model robust to the
+  # drift it sees at inference time, where each segment is conditioned on the
+  # previous segment's *generated* last frame rather than on a real frame.
+  error_injection_p: 0.8
+  clean_prob: 0.2               # probability of keeping the anchor clean
+  clean_buffer_update_prob: 0.2 # chance to refresh the buffer on a clean step
+  error_buffer_size: 30000
+
+  # Reference audio: number of latent frames kept as the global speaker
+  # timbre/style anchor (8 latent frames == 64 tokens == ~2.56 s).
+  ref_audio_num_frames: 8
+  # Probability of zeroing out the reference audio, so that inference also
+  # works when no reference audio is supplied.
+  drop_ref_audio_p: 0.05
+
+  # Extra time offset (seconds) pushing the reference image/audio positions into
+  # negative time, so the model does not treat the anchor as temporally adjacent
+  # to the first generated frame.
+  ref_position_offset: 0.0
+
+  # Probability of replacing the reference image with the clip's own first frame.
+  replace_ref_with_first_frame_p: 0.05
+
+  # --- Condition routing table ---------------------------------------------
+  # Learn a per-layer, per-head gate over the four condition channels
+  # (Anchor, Continuation, Semantic, Sync). Set to false to disable routing.
+  enable_condition_routing: true
+
+  # Decay rate of the positional bias applied to the continuation columns:
+  # continuation tokens further from the current frame receive a weaker bias.
+  cont_position_decay_lambda: 0.3
+
+# -----------------------------------------------------------------------------
+# Optimization Configuration
+# -----------------------------------------------------------------------------
+optimization:
+  learning_rate: 1e-4
+
+  # The routing table is a tiny tensor next to the LoRA weights, so it needs a
+  # much larger learning rate to move at all within a LoRA-scale run.
+  routing_table_lr_multiplier: 100
+
+  steps: 1000000
+  batch_size: 1
+  gradient_accumulation_steps: 4
+  max_grad_norm: 1.0
+
+  # "adamw" (standard) or "adamw8bit" (memory-efficient)
+  optimizer_type: "adamw"
+
+  # "constant" | "linear" | "cosine" | "cosine_with_restarts" | "polynomial"
+  scheduler_type: "linear"
+  scheduler_params: { }
+
+  enable_gradient_checkpointing: true
+
+# -----------------------------------------------------------------------------
+# Acceleration Configuration
+# -----------------------------------------------------------------------------
+acceleration:
+  # "no" (fp32) | "fp16" | "bf16" (recommended)
+  mixed_precision_mode: "bf16"
+
+  # null | "int8-quanto" | "int4-quanto" | "int2-quanto" | "fp8-quanto" | "fp8uz-quanto"
+  quantization: null
+
+  # Load Gemma in 8-bit to save VRAM (requires bitsandbytes).
+  load_text_encoder_in_8bit: false
+
+# -----------------------------------------------------------------------------
+# Data Configuration
+# -----------------------------------------------------------------------------
+data:
+  # Root of the preprocessed data produced by
+  # `packages/ltx-trainer/scripts/process_dataset.py`.
+  preprocessed_data_root: "<DATA_ROOT>/precomputed"
+
+  num_dataloader_workers: 16
+
+  # Skip the per-sample existence check across latents/, conditions/ and
+  # audio_latents/. This speeds up start-up considerably on large datasets;
+  # only enable it when you know preprocessing finished cleanly.
+  skip_integrity_check: true
+
+  # Optional: a pickle holding an explicit list of latent files to train on.
+  # Useful for mixing several preprocessed subsets, or for reproducing an exact
+  # sample list. Set to null to glob preprocessed_data_root/latents/**/*.pt.
+  saved_data_files_path: null
+
+# -----------------------------------------------------------------------------
+# Validation Configuration
+# -----------------------------------------------------------------------------
+# Validation sampling uses a simplified inference path and favours speed over
+# quality. Use `packages/ltx-pipelines` for production-quality inference.
+validation:
+  # LTX-2 prefers long prompts that describe the scene, the speech and the
+  # voice. Replace these with prompts representative of your own data.
+  prompts:
+    - "A young woman stands on a stage in front of a black and white screen. She keeps moving throughout the clip: she speaks while making clearly visible presentation gestures with both hands, opening her palms, pointing forward, pausing briefly and changing again every few seconds. Her head turns slowly left and right in rhythm with her speech and returns to the front, and her upper body leans slightly forward before straightening again. Her lip movements are strictly synchronised with the speech. Speech: \"Let me show you what we built this year.\" Voice: a woman in her late twenties, medium pace, clear articulation, warm and confident, no background music."
+    - "An adult man in a red jacket stands by the sea against a clear blue sky, a backpack on his shoulders. He stays naturally in motion for the whole clip: his head turns slowly and returns to the front, he shifts his stance slightly, and his shoulders and upper body move continuously with his breathing and speech. He smiles, and his lip movements are strictly synchronised with the speech. Sunlight comes from the right and waves keep washing over the rocks. Speech: \"So if we try, maybe we can get something minimalistic.\" Voice: an adult male, medium-slow pace, clear articulation, noticeable British accent, calm and even, quiet background with no music."
+    - "An adult man in a formal suit and tie sits at a desk with an open laptop in front of him. He is continuously in motion: he repeatedly makes emphatic gestures in front of his body, raising both hands, opening his palms, rocking them slightly back and forth and returning them above the desk, changing every few seconds. He nods and turns his head slightly and returns to the front, and his upper body keeps making small posture adjustments. His expression is focused and his lip movements are strictly synchronised with the speech. Documents and a microphone sit on the desk, and the background is a dark curtain. Speech: \"That converted people from heart disease to diabetes.\" Voice: an adult male, medium-slow pace, clear articulation, non-native English accent, even tone, clean background with no music."
+
+  negative_prompt: "worst quality, inconsistent motion, blurry, jittery, distorted, still image, still video, no motion"
+
+  # One first-frame image per prompt (image-to-video validation).
+  images:
+    - "<DATA_ROOT>/val/sample_01/frame.png"
+    - "<DATA_ROOT>/val/sample_02/frame.png"
+    - "<DATA_ROOT>/val/sample_03/frame.png"
+
+  # One reference audio per prompt (fixes the speaker timbre/style).
+  audios:
+    - "<DATA_ROOT>/val/sample_01/reference.wav"
+    - "<DATA_ROOT>/val/sample_02/reference.wav"
+    - "<DATA_ROOT>/val/sample_03/reference.wav"
+
+  # [width, height, frames]. Width/height must be divisible by 32 and
+  # frames % 8 == 1.
+  video_dims: [ 960, 544, 121 ]
+
+  frame_rate: 24.0
+  seed: 42
+  inference_steps: 40
+
+  # Run validation every N steps; null disables it.
+  interval: 300
+  videos_per_prompt: 1
+
+  guidance_scale: 4.0
+
+  # Spatio-temporal guidance, combined with CFG.
+  stg_scale: 1.0        # 0.0 disables STG
+  stg_blocks: [ 29 ]
+  stg_mode: "stg_av"    # "stg_av" perturbs audio and video, "stg_v" video only
+
+  generate_audio: true
+  skip_initial_validation: true
+
+# -----------------------------------------------------------------------------
+# Checkpoint Configuration
+# -----------------------------------------------------------------------------
+checkpoints:
+  interval: 300
+  # Number of recent checkpoints to keep (-1 keeps all).
+  keep_last_n: 1
+
+# -----------------------------------------------------------------------------
+# Flow Matching Configuration
+# -----------------------------------------------------------------------------
+flow_matching:
+  # "shifted_logit_normal" is recommended for LTX-2 models.
+  timestep_sampling_mode: "shifted_logit_normal"
+  timestep_sampling_params: { }
+
+# -----------------------------------------------------------------------------
+# Hugging Face Hub Configuration
+# -----------------------------------------------------------------------------
+hub:
+  push_to_hub: false
+  hub_model_id: null
+
+# -----------------------------------------------------------------------------
+# Weights & Biases Configuration
+# -----------------------------------------------------------------------------
+wandb:
+  enabled: false
+  project: "encore"
+  # W&B user or team; null uses the default account of the logged-in user.
+  entity: null
+  tags: [ "ltx2.3", "lora", "encore", "routing" ]
+  log_validation_videos: true
+
+# -----------------------------------------------------------------------------
+# General Configuration
+# -----------------------------------------------------------------------------
+seed: 42
+
+# Checkpoints, validation videos and logs are written here.
+output_dir: "<OUTPUT_ROOT>/encore_routing_lora"
