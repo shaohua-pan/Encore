@@ -1,24 +1,57 @@
 <div align="center">
 
-# Encore (SIGGRAPH Asia 2026)
+# Encore: Infinite Audio-Video Generation with Adaptive Signal Routing
 
-**Infinite Audio-Video Generation with Adaptive Signal Routing**
+**SIGGRAPH Asia 2026**
 
-<!-- TODO(release): fill in the paper / project page / model links -->
-[![Paper](https://img.shields.io/badge/Paper-arXiv-EC1C24?logo=arxiv&logoColor=white)](TODO_ARXIV_URL)
+Minutes-long video with synchronized audio, one ~5 s segment at a time —
+generation, audio-to-video and video-to-audio in a single model.
+
+[![Paper](https://img.shields.io/badge/Paper-PDF-B31B1B?logo=arxiv&logoColor=white)](https://shaohua-pan.github.io/encore-page/assets/encore_paper.pdf)
 [![Project Page](https://img.shields.io/badge/Project-Page-181717?logo=googlechrome&logoColor=white)](https://shaohua-pan.github.io/encore-page/)
-[![Model](https://img.shields.io/badge/HuggingFace-Model-orange?logo=huggingface)](https://huggingface.co/panshaohua/Encore/tree/main)
-[![Model](https://img.shields.io/badge/ModelScope-Model-blue)](https://www.modelscope.cn/models/panshaohua/Encore/files)
+[![Video](https://img.shields.io/badge/Video-YouTube-FF0000?logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=cP6Hy8rEqM0)
+[![HuggingFace Model](https://img.shields.io/badge/HuggingFace-Model-orange?logo=huggingface)](https://huggingface.co/panshaohua/Encore/tree/main)
+[![ModelScope Model](https://img.shields.io/badge/ModelScope-Model-blue)](https://www.modelscope.cn/models/panshaohua/Encore/files)
+
+<img src="assets/teaser.jpg" width="900" alt="Encore teaser">
 
 </div>
 
-Encore generates minutes-long videos with synchronized audio, one ~5 s segment at
-a time, from a single reference image and a text prompt. It is built on top of
-[LTX-2.3](https://github.com/Lightricks/LTX-2).
+## Demos
+
+<table>
+  <tr>
+    <td width="55%" align="center">
+      <img src="assets/gif_longform.gif" alt="500 s long-form generation"><br>
+      <sub><b>Ultra-long generation</b> — one identity held at t ≈ 18 s / 250 s / 490 s of a 500 s take</sub>
+    </td>
+    <td width="45%" align="center">
+      <img src="assets/gif_comp.gif" alt="30 s audio-video sample"><br>
+      <sub><b>30 s joint audio-video sample</b> (long-form benchmark)</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="55%" align="center">
+      <img src="assets/gif_a2v.gif" alt="Audio-to-video"><br>
+      <sub><b>Audio-to-Video (A2V)</b> — arbitrary-length video from audio + a reference image</sub>
+    </td>
+    <td width="45%" align="center">
+      <img src="assets/gif_v2a.gif" alt="Video-to-audio"><br>
+      <sub><b>Video-to-Audio (V2A)</b> — synchronized audio for silent video</sub>
+    </td>
+  </tr>
+</table>
+
+More results, including comparisons against SVI, Helios, OVI and LTX-2.3, are on
+the [project page](https://shaohua-pan.github.io/encore-page/) and in the
+[supplementary video](https://www.youtube.com/watch?v=cP6Hy8rEqM0).
+
+Encore is built on top of [LTX-2.3](https://github.com/Lightricks/LTX-2).
+
 ## Setup
 
 ```bash
-git clone TODO_REPO_URL Encore
+git clone https://github.com/shaohua-pan/Encore.git Encore
 cd Encore
 
 uv sync
@@ -45,9 +78,9 @@ The Gemma text encoder:
 
 Ours:
 
-- `encore_weight.safetensors` — the encore LoRA.
-  <!-- TODO(release): publish and link the LoRA on HuggingFace / ModelScope -->
-  **Not released yet** — see the badges above.
+- `encore_weight.safetensors` — the encore LoRA, available from
+  [HuggingFace](https://huggingface.co/panshaohua/Encore/tree/main) or
+  [ModelScope](https://www.modelscope.cn/models/panshaohua/Encore/files).
 
 ### Placeholders
 
@@ -191,13 +224,17 @@ derivative of it and is not a substitute for the original benchmark.
 
 ## Citation
 
-<!-- TODO(release): replace with the final bibtex -->
+If you find Encore useful in your research, please cite:
+
 ```bibtex
-@inproceedings{encore,
-  title     = {TODO},
-  author    = {TODO},
-  booktitle = {TODO},
-  year      = {TODO}
+@inproceedings{pan2026encore,
+  title     = {Encore: Infinite Audio-Video Generation with Adaptive Signal Routing},
+  author    = {Pan, Shaohua and Chen, Junbao and He, Shengyi and Xue, Jingfeng and
+               Tao, Wen and Feng, Haocheng and Fan, Siming and Pan, Dongwei and
+               Yang, Yi and He, Wei and Zhou, Hang},
+  booktitle = {SIGGRAPH Asia},
+  note      = {To appear},
+  year      = {2026}
 }
 ```
 
